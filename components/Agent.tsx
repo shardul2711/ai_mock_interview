@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react'
 import { vapi } from '@/lib/vapi.sdk';
+import { interviewer } from '@/constants';
 // import { createFeedback } from '@/lib/actions/general.action'; // Import your Firebase action
 
 enum CallStatus {
@@ -19,7 +20,7 @@ interface SavedMessage {
   content: string;
 }
 
-const Agent = ({ userName, userId, interviewId, feedbackId, type }: AgentProps) => {
+const Agent = ({ userName, userId, interviewId, feedbackId, type, questions }: AgentProps) => {
   const router = useRouter();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE);
@@ -67,56 +68,65 @@ const Agent = ({ userName, userId, interviewId, feedbackId, type }: AgentProps) 
     }
   }, [])
 
+  const handleGenerateFeedback = async (messages: SavedMessage[]) =>{
+    console.log('Generate feedback here.');
+
+    // TODO: Create a server action that generates feedback
+    const {success, id } = {
+      success: true,
+      id: 'feedback-id',
+    }
+
+    if(success && id){
+      router.push(`/interview/${interviewId}/feedback`);
+    }else{
+      console.log("Error saving feedback");
+      router.push('/');
+    }
+  }
+
   useEffect(() => {
-    const handleGenerateFeedback = async () => {
-      try {
-        const { success, feedbackId: newFeedbackId } = await createFeedback({
-          interviewId: interviewId!,
-          userId: userId!,
-          transcript: messages,
-          feedbackId
-        });
-
-        if (success && newFeedbackId) {
-          router.push(`/interview/${interviewId}/feedback`);
-        } else {
-          setError('Failed to save feedback');
-          router.push("/");
-        }
-      } catch (err) {
-        console.error("Feedback generation error:", err);
-        setError('Failed to save feedback');
-        router.push("/");
-      }
-    };
-
-    if (callStatus === CallStatus.FINISHED) {
-      if (type === 'generate') {
-        router.push('/');
-      } else {
-        handleGenerateFeedback();
+    if(callStatus === CallStatus.FINISHED){
+      if(type === 'generate'){
+        router.push('/')
+      }else{
+        handleGenerateFeedback(messages);
       }
     }
-  }, [callStatus, router, messages, interviewId, userId, feedbackId, type]);
+  }, [messages, callStatus, type, userId])
 
   const handleCall = async () => {
-    try {
-      setError(null);
+    // try {
+      // setError(null);
       setCallStatus(CallStatus.CONNECTING);
       
-      const response = await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
-        variableValues: { 
-          username: userName, 
-          userid: userId 
-        }
-      });
+      if(type === 'generate') {
+        await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
+          variableValues: { 
+            username: userName, 
+            userid: userId 
+          }
+        })
+      } else {
+        let formattedQuestions = '';
 
-      console.log("Call started:", response);
-    } catch (error) {
-      console.error("Call failed:", error);
-      setError('Failed to start call. Please try again.');
-      setCallStatus(CallStatus.INACTIVE);
-    }
+        if(questions){
+          formattedQuestions = questions.map((question) => `- ${question}`).join('\n');
+        }
+
+        await vapi.start(interviewer, {
+          variableValues: {
+            questions: formattedQuestions
+          }
+        })
+      }
+
+    //   console.log("Call started:", response);
+    // } catch (error) {
+    //   console.error("Call failed:", error);
+    //   setError('Failed to start call. Please try again.');
+    //   setCallStatus(CallStatus.INACTIVE);
+    // }
   };
 
   const handleDisconnect = async () => {
